@@ -641,6 +641,32 @@ __device__ void KerGetInteractionCells(unsigned rcell
   zini=cz-min(cz,hdiv);
   zfin=cz+min(nc.z-cz-1,hdiv)+1;
 }
+//******************************************************************************ABVR
+//------------------------------------------------------------------------------
+/// Devuelve limites de celdas para interaccion.
+/// Returns cell limits for the interaction.
+//------------------------------------------------------------------------------
+__device__ void KerGetInteractionCellsMPVR(unsigned rcell
+  , int hdiv, const uint4 &nc,const int3 &cellzero
+  ,int &cxini,int &cxfin,int &yini,int &yfin,int &zini,int &zfin, const double H1)
+{
+  //-Obtiene limites de interaccion
+  //-Obtains interaction limits.
+	int hdivnew=H1/CTE.h*hdiv; //ABVR
+  const int cx=PC__Cellx(CTE.cellcode,rcell)-cellzero.x;
+  const int cy=PC__Celly(CTE.cellcode,rcell)-cellzero.y;
+  const int cz=PC__Cellz(CTE.cellcode,rcell)-cellzero.z;
+  //-Codigo para hdiv 1 o 2 pero no cero.
+  //-Code for hdiv 1 or 2 but not zero.
+  cxini=cx-min(cx,hdivnew);
+  cxfin=cx+min(nc.x-cx-1,hdivnew)+1;
+  yini=cy-min(cy,hdivnew);
+  yfin=cy+min(nc.y-cy-1,hdivnew)+1;
+  zini=cz-min(cz,hdivnew);
+  zfin=cz+min(nc.z-cz-1,hdivnew)+1;
+}
+
+//******************************************************************************ABVR
 
 //------------------------------------------------------------------------------
 /// Devuelve limites de celdas para interaccion.
@@ -682,18 +708,27 @@ __device__ void KerGetKernel(float rr2,float drx,float dry,float drz
 
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 //------------------------------------------------------------------------------
-/// Returns Wendland kernel and kernel gradient values: wab, frx, fry and frz. -££//MP
+/// Returns Wendland kernel and kernel gradient values: wab, frx, fry and frz. -££//MP ABVR
 //------------------------------------------------------------------------------
 __device__ void KerGetKernelShift(float rr2,float drx,float dry,float drz
-  ,float &frx,float &fry,float &frz,float &wab)
+  ,float &frx,float &fry,float &frz,float &frx1,float &fry1,float &frz1,float &frx2,float &fry2,float &frz2,float &wab,const double Dp1, const double Dp2, const double H1, const double H2, float Awen1, float Awen2, float Bwen1, float Bwen2 )
 {
   const float rad=sqrt(rr2);
-  const float qq=rad/CTE.h;
+  const float qq1=rad/H1;
+  float qq2=rad/H2;
+	if (qq2>2.0f) qq2=2.f;
   //-Wendland kernel.
-  const float wqq1=1.f-0.5f*qq;
-  const float fac=CTE.bwen*qq*wqq1*wqq1*wqq1/rad;
-  frx=fac*drx; fry=fac*dry; frz=fac*drz;
-  wab=CTE.awen*(2.f*qq+1.f)*wqq1*wqq1*wqq1*wqq1;
+  const float wqq1=1.f-0.5f*qq1;
+  const float wqq2=1.f-0.5f*qq2;
+  const float fac2=Bwen2*qq2*wqq2*wqq2*wqq2/rad;
+  const float fac1=Bwen1*qq1*wqq1*wqq1*wqq1/rad;
+  //const float fac=0.5f*(fac1+fac2);
+	frx1=fac1*drx; fry1=fac1*dry; frz1=fac1*drz;
+	frx2=fac2*drx; fry2=fac2*dry; frz2=fac2*drz;
+  frx=0.5f*(frx1+frx2); fry=0.5f*(fry1+fry2); frz=0.5f*(frz1+frz2);
+  float wab1=Awen1*(2.f*qq1+1.f)*wqq1*wqq1*wqq1*wqq1;
+  float wab2=Awen2*(2.f*qq2+1.f)*wqq2*wqq2*wqq2*wqq2;
+  wab=0.5f*(wab1+wab2);
 }
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 
@@ -743,24 +778,43 @@ __device__ void KerGetKernelCubic(float rr2,float drx,float dry,float drz
 /// Return values of Cubic kernel and gradients without tensil correction: wab, frx, fry and frz. -££//MP
 //------------------------------------------------------------------------------
 __device__ void KerGetKernelCubicShift(float rr2,float drx,float dry,float drz
-  ,float &frx,float &fry,float &frz,float &wab)
+  ,float &frx,float &fry,float &frz,float &wab,const double Dp1, const double Dp2, const double H1, const double H2, float Cubic_c11, float Cubic_a21, float Cubic_a241,float Cubic_c21, float Cubic_d11,float Cubic_c12, float Cubic_a22, float Cubic_a242,float Cubic_c22, float Cubic_d12)
 {
   const float rad=sqrt(rr2);
-  const float qq=rad/CTE.h;
+  const float qq1=rad/H1;
+	const float qq2=rad/H2;
   //-Cubic Spline kernel
-  float fac;
-  if(rad>CTE.h){
-    float wqq1=2.0f-qq;
-    float wqq2=wqq1*wqq1;
-    fac=CTE.cubic_c2*wqq2/rad;
-	wab=CTE.cubic_a24*(wqq2*wqq1);
+	float fac;
+	float fac1;
+	float wab1;
+  if(rad>H1){
+    float wqq3=2.0f-qq2;
+    float wqq4=wqq3*wqq3;
+    fac1=Cubic_c22*wqq4/rad;
+	  wab1=Cubic_a242*(wqq4*wqq3);
   }
   else{
-    float wqq2=qq*qq;
-    fac=(CTE.cubic_c1*qq+CTE.cubic_d1*wqq2)/rad;
-    wab=CTE.cubic_a2*(1.0f-1.5f*wqq2+0.75f*wqq2*qq);
+    float wqq3=qq2*qq2;
+    fac1=(Cubic_c12*qq1+Cubic_d12*wqq3)/rad;
+    wab1=Cubic_a21*(1.0f-1.5f*wqq3+0.75f*wqq3*qq1);
+  }
+
+  float fac2;
+	float wab2;
+  if(rad>H2){
+    float wqq1=2.0f-qq1;
+    float wqq2=wqq1*wqq1;
+    fac1=Cubic_c21*wqq2/rad;
+	  wab2=Cubic_a241*(wqq2*wqq1);
+  }
+  else{
+    float wqq2=qq1*qq1;
+    fac2=(Cubic_c11*qq1+Cubic_d11*wqq2)/rad;
+    wab2=Cubic_a21*(1.0f-1.5f*wqq2+0.75f*wqq2*qq1);
   }
   //-Gradients.
+	wab=0.5f*(wab1+wab2);
+	fac=0.5f*(fac1+fac2);
   frx=fac*drx; fry=fac*dry; frz=fac*drz;
 }
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
@@ -821,6 +875,8 @@ __device__ float KerGetKernelCubicTensil(float rr2
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
   return(fab*(tensilp1+tensilp2));
 }
+
+
 
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 //==============================================================================
@@ -987,27 +1043,38 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __device__ void 
   ,const float *ftomassp
   ,const double2 *posxy,const double *posz,const float4 *pospress,const float4 *velrhop,const word *code,const unsigned* idp
   ,double3 posdp1,float3 posp1,float3 velp1,float rhopp1,float &arp1,float &visc,volatile StPhaseBoundData *bounddata
-  ,TpShifting tshifting,float &shiftdetectp1)
+  ,TpShifting tshifting,float &shiftdetectp1,double Dp1,double H1, float Awen1, float Bwen1, float Fourh2, float Cubic_c11, float Cubic_a21, float Cubic_a241, float Cubic_c21, float Cubic_d11, float masstot)
 {
   for(int p2=pini;p2<pfin;p2++){
     float drx,dry,drz;
     KerGetParticlesDr<psimple>(p2,posxy,posz,pospress,posdp1,posp1,drx,dry,drz);
     float rr2=drx*drx+dry*dry+drz*drz;
-    if(rr2<=CTE.fourh2 && rr2>=ALMOSTZERO){
+    if(rr2<=Fourh2 && rr2>=ALMOSTZERO){
+			//-Multiphase variables
+			float massp2; double Dp2; double H2; float Awen2; float Bwen2; float Cubic_c12; float Cubic_a22; float Cubic_a242; float Cubic_c22; float Cubic_d12; float Eta22;
+			for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ //added selection for material properties
+			if(CODE_GetTypeAndValue(code[p1])==bounddata[iphase].MkValue){
+		  massp2=bounddata[iphase].PhaseMass;
+			Dp2=bounddata[iphase].PhaseDp; //ABVR
+			H2=bounddata[iphase].PhaseH; //ABVR
+			Awen2=bounddata[iphase].PhaseAwen; //ABVR
+			Bwen2=bounddata[iphase].PhaseBwen; //ABVR
+			Cubic_c12=bounddata[iphase].PhaseCubic_c1; //ABVR
+			Cubic_a22=bounddata[iphase].PhaseCubic_a2; //ABVR
+			Cubic_a242=bounddata[iphase].PhaseCubic_a24; //ABVR
+			Cubic_c22=bounddata[iphase].PhaseCubic_c2; //ABVR
+			Cubic_d12=bounddata[iphase].PhaseCubic_d1; //ABVR
+			Eta22=bounddata[iphase].PhaseEta2; //ABVR
+			break;
+		}
+	}
       //-Wendland or Cubic Spline kernel.
-      float frx,fry,frz,wab;
-      if(tker==KERNEL_Wendland)KerGetKernelShift(rr2,drx,dry,drz,frx,fry,frz,wab);
-      else if(tker==KERNEL_Cubic)KerGetKernelCubicShift(rr2,drx,dry,drz,frx,fry,frz,wab);
+      float frx,fry,frz,frx1,fry1,frz1,frx2,fry2,frz2,wab;
+			if(tker==KERNEL_Wendland)KerGetKernelShift(rr2,drx,dry,drz,frx,fry,frz,frx1,fry1,frz1,frx2,fry2,frz2,wab,Dp1,Dp2,H1,H2,Awen1,Awen2,Bwen1,Bwen2); //ABVR
+      else if(tker==KERNEL_Cubic)KerGetKernelCubicShift(rr2,drx,dry,drz,frx,fry,frz,wab,Dp1,Dp2,H1,H2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11,Cubic_c12,Cubic_a22,Cubic_a242,Cubic_c22,Cubic_d12);
 
       const float4 velrhop2=velrhop[p2];
       //-Obtiene masa de particula p2 en caso de existir floatings.
-	  float massp2;
-	  for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ //different mass for each for each material as defined in the xml
-		if(CODE_GetTypeAndValue(code[p2])==bounddata[iphase].MkValue){
-		  massp2=bounddata[iphase].PhaseMass;
-		  break;
-		}
-	  }
       //-Obtains particle mass p2 if there are floating bodies.
 	  float ftmassp2;//-Contiene masa de particula floating o massf si es fluid. //-Contains mass of floating body or massf if fluid.
       bool compute=true; //-Se desactiva cuando se usa DEM y es float-float o float-bound. //-Deactivated when DEM is used and is float-float or float-bound.
@@ -1026,12 +1093,15 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __device__ void 
 
         {//===== Viscosity ===== 
           const float dot=drx*dvx + dry*dvy + drz*dvz;
-          const float dot_rr2=dot/(rr2+CTE.eta2);
+          const float dot_rr2=dot/(rr2+Eta22);
           visc=max(dot_rr2,visc); 
         }
 		//===== Shifting ======
 		float massrhop=(USE_FLOATING? ftmassp2: massp2)/velrhop2.w;
-		if(shift)shiftdetectp1+=massrhop*wab;
+		if(shift){
+			shiftdetectp1+=massrhop*wab;
+			masstot+=massp2;
+		}
       }
     }
   }
@@ -1043,6 +1113,25 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __device__ void 
 /// Realiza interaccion entre particulas. Bound-Fluid/Float
 /// Particle interaction. Bound-Fluid/Float -££//MP
 //------------------------------------------------------------------------------
+__device__ void KerCorrectHneighbourlistBound
+  (const unsigned &pini,const unsigned &pfin,const word *code,unsigned phasetype1,volatile StPhaseBoundData *bounddata,double H1,double newH) //ABVR
+{
+  for(int p2=pini;p2<pfin;p2++){
+		double H2;
+		for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ 
+		  if(CODE_GetTypeAndValue(code[p2])==bounddata[iphase].MkValue){
+			  H2=bounddata[iphase].PhaseH; //ABVR
+			  break;
+		  }
+	  }
+
+		if(H1<H2){
+			newH=H2;
+			break;
+		}
+	}
+}
+
 template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __global__ void KerInteractionForcesBoundMP
   (unsigned n,int hdiv,uint4 nc,const int2 *begincell,int3 cellzero,const unsigned *dcell
   ,const float *ftomassp
@@ -1057,6 +1146,17 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __global__ void 
 		  bounddata[i].MkValue=phasedata[i].MkValue;
 		  bounddata[i].PhaseMass=phasedata[i].PhaseMass;
 		  bounddata[i].PhaseType=phasedata[i].PhaseType;
+			bounddata[i].PhaseH=phasedata[i].PhaseH;
+			bounddata[i].PhaseDp=phasedata[i].PhaseDp; //ABVR
+		  bounddata[i].PhaseH=phasedata[i].PhaseH; //ABVR
+		  bounddata[i].PhaseAwen=phasedata[i].PhaseAwen; //ABVR
+		  bounddata[i].PhaseBwen=phasedata[i].PhaseBwen; //ABVR
+			bounddata[i].PhaseFourh2=phasedata[i].PhaseFourh2; //ABVR
+			bounddata[i].PhaseCubic_c1=phasedata[i].PhaseCubic_c1; //ABVR
+			bounddata[i].PhaseCubic_a2=phasedata[i].PhaseCubic_a2; //ABVR
+			bounddata[i].PhaseCubic_c2=phasedata[i].PhaseCubic_c2; //ABVR
+			bounddata[i].PhaseCubic_a24=phasedata[i].PhaseCubic_a24; //ABVR
+			bounddata[i].PhaseCubic_d1=phasedata[i].PhaseCubic_d1; //ABVR
 	  }
   }
   __syncthreads();
@@ -1072,24 +1172,53 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __global__ void 
     KerGetParticleDataMP<psimple>(p1,posxy,posz,pospress,velrhop,velp1,rhopp1,posdp1,posp1);
 
 	//-Multiphase variables
-	float massp1;
+	float phasetype1; float massp1; double Dp1; double H1; float Awen1; float Bwen1; float Fourh2; float Cubic_c11; float Cubic_a21; float Cubic_a241; float Cubic_c21; float Cubic_d11;
 	for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ //added selection for material properties
 		if(CODE_GetTypeAndValue(code[p1])==bounddata[iphase].MkValue){
 		  massp1=bounddata[iphase].PhaseMass;
-		  break;
-		}
+			phasetype1=bounddata[iphase].PhaseType;
+			Dp1=phasedata[iphase].PhaseDp; //ABVR
+		  H1=phasedata[iphase].PhaseH; //ABVR
+		  Awen1=phasedata[iphase].PhaseAwen; //ABVR
+		  Bwen1=phasedata[iphase].PhaseBwen;  //ABVR
+			Fourh2=phasedata[iphase].PhaseFourh2;  //ABVR
+			Cubic_c11=phasedata[iphase].PhaseCubic_c1;
+			Cubic_a21=phasedata[iphase].PhaseCubic_a2;
+			Cubic_c21=phasedata[iphase].PhaseCubic_c2;
+			Cubic_a241=phasedata[iphase].PhaseCubic_a24;
+			Cubic_d11=phasedata[iphase].PhaseCubic_d1;
+			break;
+			}
 	}
 
 	//-Shifting variables
     float shiftdetectp1;
+		float masstot;
     if(shift){
-      shiftdetectp1=(tker==KERNEL_Wendland? massp1*CTE.awen/rhopp1:massp1*CTE.cubic_a2/rhopp1);
+      shiftdetectp1=(tker==KERNEL_Wendland? massp1*Awen1/rhopp1:massp1*Cubic_a21/rhopp1);
     }
 
     //-Obtiene limites de interaccion
     //-Obtains interaction limits
     int cxini,cxfin,yini,yfin,zini,zfin;
-    KerGetInteractionCells(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin);
+    KerGetInteractionCellsMPVR(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin,H1); //ABVR
+		double newH=0;
+    for(int z=zini;z<zfin;z++){
+      int zmod=(nc.w)*z+(nc.w*nc.z+1);//-Le suma Nct+1 que es la primera celda de fluido. //-Adds Nct + 1 which is the first cell fluid.
+      for(int y=yini;y<yfin;y++){
+        int ymod=zmod+nc.x*y;
+        unsigned pini,pfin=0;
+        for(int x=cxini;x<cxfin;x++){
+          int2 cbeg=begincell[x+ymod];
+          if(cbeg.y){
+            if(!pfin)pini=cbeg.x;
+            pfin=cbeg.y;
+          }
+        }
+        if(pfin) KerCorrectHneighbourlistBound(pini,pfin,code,phasetype1,bounddata,H1,newH);
+      }
+    }
+		if(newH) KerGetInteractionCellsMPVR(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin,newH); //ABVR
 
     //-Interaccion de Contorno con Fluidas.
     //-Boundary-Fluid interaction.
@@ -1105,7 +1234,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __global__ void 
             pfin=cbeg.y;
           }
         }
-        if(pfin)KerInteractionForcesBoundBoxMP<psimple,tker,ftmode,shift> (p1,pini,pfin,ftomassp,posxy,posz,pospress,velrhop,code,idp,posdp1,posp1,velp1,rhopp1,arp1,visc,bounddata,tshifting,shiftdetectp1);
+        if(pfin)KerInteractionForcesBoundBoxMP<psimple,tker,ftmode,shift> (p1,pini,pfin,ftomassp,posxy,posz,pospress,velrhop,code,idp,posdp1,posp1,velp1,rhopp1,arp1,visc,bounddata,tshifting,shiftdetectp1,Dp1,H1,Awen1,Bwen1,Fourh2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11,masstot);
       }
     }
 	//-Interaccion con contorno.
@@ -1123,13 +1252,13 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool shift> __global__ void 
 			pfin=cbeg.y;
 		  }
 		}
-		if(pfin)KerInteractionForcesBoundBoxMP<psimple,tker,ftmode,shift> (p1,pini,pfin,ftomassp,posxy,posz,pospress,velrhop,code,idp,posdp1,posp1,velp1,rhopp1,dummy,visc,bounddata,tshifting,shiftdetectp1);
+		if(pfin)KerInteractionForcesBoundBoxMP<psimple,tker,ftmode,shift> (p1,pini,pfin,ftomassp,posxy,posz,pospress,velrhop,code,idp,posdp1,posp1,velp1,rhopp1,dummy,visc,bounddata,tshifting,shiftdetectp1,Dp1,H1,Awen1,Bwen1,Fourh2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11,masstot);
 	  }
 	}
     //-Almacena resultados.
     //-Stores results.
     if(shift || arp1 || visc){
-	  if(shift)shiftdetect[p1]=shiftdetectp1;
+	  if(shift)shiftdetect[p1]=masstot*shiftdetectp1;
       ar[p1]+=arp1;
       if(visc>viscdt[p1])viscdt[p1]=visc;
     }
@@ -1395,6 +1524,26 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
 /// Realiza la interaccion de una particula con un conjunto de ellas. (Fluid/Float-Fluid/Float/Bound)
 /// Interaction of a particle with a set of particles. (Fluid/Float-Fluid/Float/Bound) -££//MP
 //------------------------------------------------------------------------------
+__device__ void KerCorrectHneighbourlistFluid
+  (const unsigned &pini,const unsigned &pfin,const word *code,unsigned phasetype1,volatile StPhaseData *accdata,double H1,double newH) //ABVR
+{
+  for(int p2=pini;p2<pfin;p2++){
+		double H2;
+		for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ 
+		  if(CODE_GetTypeAndValue(code[p2])==accdata[iphase].MkValue){
+			  H2=accdata[iphase].PhaseH; //ABVR
+			  break;
+		  }
+	  }
+
+		if(H1<H2){
+			newH=H2;
+			break;
+		}
+	}
+}
+
+
 template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelta,bool shift> __device__ void KerInteractionForcesFluidBoxMP
   (bool boundp2,unsigned p1,const unsigned &pini,const unsigned &pfin,float visco1
   ,const float *ftomassp,const float2 *tauff
@@ -1405,15 +1554,15 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
   ,float2 &grap1_xx_xy,float2 &grap1_xz_yy,float2 &grap1_yz_zz
   ,float3 &acep1,float &arp1,float &visc,float &deltap1
   ,float rhop0p1,unsigned phasetype1,volatile StPhaseData *accdata
-  ,TpShifting tshifting,float3 &shiftposp1,float &shiftdetectp1)
+  ,TpShifting tshifting,float3 &shiftposp1,float &shiftdetectp1, float &masstot, double Dp1,double H1, float Awen1, float Bwen1, float Fourh2, float Cubic_c11, float Cubic_a21, float Cubic_a241, float Cubic_c21, float Cubic_d11, float Delta2H1) //ABVR
 {
   for(int p2=pini;p2<pfin;p2++){
     float drx,dry,drz,pressp2;
     KerGetParticlesDr<psimple> (p2,posxy,posz,pospress,posdp1,posp1,drx,dry,drz,pressp2);
     float rr2=drx*drx+dry*dry+drz*drz;
-    if(rr2<=CTE.fourh2 && rr2>=ALMOSTZERO){
+		if(rr2<=Fourh2 && rr2>=ALMOSTZERO){
 		//-load unique properties for each phase
-	  float rhop02; float cs02; float massp2; unsigned phasetype2; float gamma2; float visco2;
+	  float rhop02; float cs02; float massp2; unsigned phasetype2; float gamma2; float visco2; double Dp2; double H2; float Awen2; float Bwen2; float Cubic_c12; float Cubic_a22; float Cubic_a242; float Cubic_c22; float Cubic_d12; float Eta22;
 	  for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ 
 		  if(CODE_GetTypeAndValue(code[p2])==accdata[iphase].MkValue){
 			  rhop02=accdata[iphase].PhaseRhop0;
@@ -1422,14 +1571,25 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
 			  phasetype2=accdata[iphase].PhaseType;
 			  gamma2=accdata[iphase].PhaseGamma;
 			  visco2=accdata[iphase].PhaseVisco;
+			  Dp2=accdata[iphase].PhaseDp; //ABVR
+			  H2=accdata[iphase].PhaseH; //ABVR
+			  Awen2=accdata[iphase].PhaseAwen; //ABVR
+			  Bwen2=accdata[iphase].PhaseBwen; //ABVR
+				Cubic_c12=accdata[iphase].PhaseCubic_c1; //ABVR
+				Cubic_a22=accdata[iphase].PhaseCubic_a2; //ABVR
+				Cubic_a242=accdata[iphase].PhaseCubic_a24; //ABVR
+				Cubic_c22=accdata[iphase].PhaseCubic_c2; //ABVR
+				Cubic_d12=accdata[iphase].PhaseCubic_d1; //ABVR
+				Eta22=accdata[iphase].PhaseEta2; //ABVR
 			  break;
 		  }
 	  }
       //-Wendland or Cubic Spline kernel.
-      float frx,fry,frz,wab;
-      if(tker==KERNEL_Wendland)KerGetKernelShift(rr2,drx,dry,drz,frx,fry,frz,wab);
-      else if(tker==KERNEL_Cubic)KerGetKernelCubicShift(rr2,drx,dry,drz,frx,fry,frz,wab);
+      float frx,fry,frz,frx1,fry1,frz1,frx2,fry2,frz2,wab;
+      if(tker==KERNEL_Wendland)KerGetKernelShift(rr2,drx,dry,drz,frx,fry,frz,frx1,fry1,frz1,frx2,fry2,frz2,wab,Dp1,Dp2,H1,H2,Awen1,Awen2,Bwen1,Bwen2); //ABVR
+      else if(tker==KERNEL_Cubic)KerGetKernelCubicShift(rr2,drx,dry,drz,frx,fry,frz,wab,Dp1,Dp2,H1,H2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11,Cubic_c12,Cubic_a22,Cubic_a242,Cubic_c22,Cubic_d12);
 
+      float pressp2;
       //-Obtiene masa de particula p2 en caso de existir floatings.
       //-Obtains mass of particle p2 if any floating bodies exist.
       bool ftp2;         //-Indica si es floating. //-indicates if it is floating.
@@ -1457,11 +1617,12 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
 			pressp2=(b*(powf(velrhop2.w/rhop02,gamma2)-1.0f));
 			if(phasetype2==1)pressp2-=CTE.mpcoef/rhop02*velrhop2.w*velrhop2.w; //-Add cohesion term for multi-phase flows
 		}
-        const float prs=(pressp1+pressp2)/(rhopp1*velrhop2.w) + (tker==KERNEL_Cubic? KerGetKernelCubicTensil(rr2,rhopp1,pressp1,velrhop2.w,pressp2): 0);
-        const float p_vpm=-prs*(USE_FLOATING? ftmassp2*ftmassp1: massp2);
-        acep1.x+=p_vpm*frx; acep1.y+=p_vpm*fry; acep1.z+=p_vpm*frz;
+        const float prs=1/(rhopp1*velrhop2.w) + (tker==KERNEL_Cubic? KerGetKernelCubicTensil(rr2,rhopp1,pressp1,velrhop2.w,pressp2): 0);
+        const float p_vpm=prs*(USE_FLOATING? ftmassp2*ftmassp1: massp2);
+        acep1.x+=p_vpm*(pressp1*frx2-pressp2*frx1); acep1.y+=p_vpm*(pressp1*fry2-pressp2*fry1); acep1.z+=p_vpm*(pressp1*frz2-pressp2*frz1);
+
 		//-Add cohesion term to the momentum equation
-		if(phasetype1==1 && phasetype2==1){
+			if(phasetype1==1 && phasetype2==1){
 			const float rhopmp=2.f*rhop0p1*rhop0p1;
 			const float cohterm=CTE.mpcoef*rhopmp/rhop0p1*massp2/(rhopp1*velrhop2.w);
 			acep1.x+=cohterm*frx;
@@ -1479,7 +1640,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
       if((tdelta==DELTA_Dynamic || tdelta==DELTA_DynamicExt)){
 		  if (phasetype1==phasetype2){
 			const float rhop1over2=rhopp1/velrhop2.w;
-			const float visc_densi=CTE.delta2h*cbar*(rhop1over2-1.f)/(rr2+CTE.eta2);
+			const float visc_densi=Delta2H1*cbar*(rhop1over2-1.f)/(rr2+Eta22);
 			const float dot3=(drx*frx+dry*fry+drz*frz);
 			const float delta=visc_densi*dot3*(USE_FLOATING? ftmassp2: massp2);
 			if(USE_FLOATING)deltap1=(boundp2 || deltap1==FLT_MAX? FLT_MAX: deltap1+delta); //-Con floating bodies entre el fluido. //-For floating bodies within the fluid
@@ -1488,24 +1649,28 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
       }
 
       ////-Shifting correction
+		
 	  const float massrhop=(USE_FLOATING? ftmassp2: massp2)/velrhop2.w;
-	  if(shift)	shiftdetectp1+=massrhop*wab;
+	  if(shift)	{
+			shiftdetectp1+=massrhop*wab;
+			masstot+=(USE_FLOATING? ftmassp2: massp2);
+		}
 
 	  //===== Colour function gradient ===== //used to compute surface tension
 	  if (surfc1){
-		shiftposp1.x+=massrhop*frx;
-		shiftposp1.y+=massrhop*fry;
-		shiftposp1.z+=massrhop*frz;
+		shiftposp1.x+=(USE_FLOATING? ftmassp2: massp2)*massrhop*frx;
+		shiftposp1.y+=(USE_FLOATING? ftmassp2: massp2)*massrhop*fry;
+		shiftposp1.z+=(USE_FLOATING? ftmassp2: massp2)*massrhop*frz;
 	  }
 
       //===== Viscosity ===== 
       if(compute){
         const float dot=drx*dvx + dry*dvy + drz*dvz;
-        const float dot_rr2=dot/(rr2+CTE.eta2);
+        const float dot_rr2=dot/(rr2+Eta22);
         visc=max(dot_rr2,visc);  //ViscDt=max(dot/(rr2+Eta2),ViscDt);
         if(!lamsps){//-Artificial viscosity 
           if(dot<0){
-            const float amubar=CTE.h*dot_rr2;  //amubar=CTE.h*dot/(rr2+CTE.eta2);
+            const float amubar=H2*dot_rr2;  //amubar=CTE.h*dot/(rr2+CTE.eta2);
             const float robar=(rhopp1+velrhop2.w)*0.5f;
             const float pi_visc=(-visco2*cbar*amubar/robar)*(USE_FLOATING? ftmassp2*ftmassp1: massp2);
             acep1.x-=pi_visc*frx; acep1.y-=pi_visc*fry; acep1.z-=pi_visc*frz;
@@ -1514,7 +1679,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
         else{//-Laminar+SPS viscosity 
           {//-Laminar contribution.
             const float robar2=(rhopp1+velrhop2.w);
-            const float temp=2.f*(visco1+visco2)/((rr2+CTE.eta2)*robar2);  //-Simplificacion de temp=2.0f*visco/((rr2+CTE.eta2)*robar); robar=(rhopp1+velrhop2.w)*0.5f;
+            const float temp=2.f*(visco1+visco2)/((rr2+Eta22)*robar2);  //-Simplificacion de temp=2.0f*visco/((rr2+CTE.eta2)*robar); robar=(rhopp1+velrhop2.w)*0.5f;
             const float vtemp=(USE_FLOATING? ftmassp2: massp2)*temp*(drx*frx+dry*fry+drz*frz);  
             acep1.x+=vtemp*dvx; acep1.y+=vtemp*dvy; acep1.z+=vtemp*dvz;
           }
@@ -1544,6 +1709,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
     }
   }
 }
+
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
@@ -1573,6 +1739,17 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
 		  accdata[i].PhaseGamma=phasedata[i].PhaseGamma;
 		  accdata[i].PhaseVisco=phasedata[i].PhaseVisco;
 		  accdata[i].PhaseSurf=phasedata[i].PhaseSurf;
+		  accdata[i].PhaseDp=phasedata[i].PhaseDp; //ABVR
+		  accdata[i].PhaseH=phasedata[i].PhaseH; //ABVR
+		  accdata[i].PhaseAwen=phasedata[i].PhaseAwen; //ABVR
+		  accdata[i].PhaseBwen=phasedata[i].PhaseBwen; //ABVR
+			accdata[i].PhaseFourh2=phasedata[i].PhaseFourh2; //ABVR
+			accdata[i].PhaseCubic_c1=phasedata[i].PhaseCubic_c1; //ABVR
+			accdata[i].PhaseCubic_a2=phasedata[i].PhaseCubic_a2; //ABVR
+			accdata[i].PhaseCubic_c2=phasedata[i].PhaseCubic_c2; //ABVR
+			accdata[i].PhaseCubic_a24=phasedata[i].PhaseCubic_a24; //ABVR
+			accdata[i].PhaseCubic_d1=phasedata[i].PhaseCubic_d1; //ABVR
+			accdata[i].PhaseDelta2H=phasedata[i].PhaseDelta2H; //ABVR
 	  }
   }
   __syncthreads();
@@ -1583,7 +1760,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
     float3 acep1=make_float3(0,0,0);
 
 	//-Load unique properties for each phase
-	float rhop01; float cs01; unsigned phasetype1; float gamma1; float visco1; float massp1; float surfc1=0.f;
+	float rhop01; float cs01; unsigned phasetype1; float gamma1; float visco1; float massp1; float surfc1=0.f; double Dp1; double H1; float Awen1; float Bwen1; float Fourh2; float Cubic_c11; float Cubic_a21; float Cubic_a241; float Cubic_c21; float Cubic_d11; float Delta2H1; //ABVR
 	for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){
 		if(CODE_GetTypeAndValue(code[p1])==accdata[iphase].MkValue){
 		  rhop01=accdata[iphase].PhaseRhop0;
@@ -1593,7 +1770,18 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
 		  gamma1=accdata[iphase].PhaseGamma;
 		  visco1=accdata[iphase].PhaseVisco;
 		  surfc1=phasedata[iphase].PhaseSurf;
-		  break;
+		  Dp1=phasedata[iphase].PhaseDp; //ABVR
+		  H1=phasedata[iphase].PhaseH; //ABVR
+		  Awen1=phasedata[iphase].PhaseAwen; //ABVR
+		  Bwen1=phasedata[iphase].PhaseBwen;  //ABVR
+			Fourh2=phasedata[iphase].PhaseFourh2;  //ABVR
+			Cubic_c11=phasedata[iphase].PhaseCubic_c1;
+			Cubic_a21=phasedata[iphase].PhaseCubic_a2;
+			Cubic_c21=phasedata[iphase].PhaseCubic_c2;
+			Cubic_a241=phasedata[iphase].PhaseCubic_a24;
+			Cubic_d11=phasedata[iphase].PhaseCubic_d1;
+			Delta2H1=phasedata[iphase].PhaseDelta2H;
+			break;
 		}
 	}
 
@@ -1603,14 +1791,15 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
     float3 posp1,velp1;
     float rhopp1,pressp1;
     KerGetParticleDataMP<psimple>(p1,posxy,posz,pospress,velrhop,velp1,rhopp1,posdp1,posp1,pressp1,rhop01,cs01,gamma1,phasetype1);
-
+	
     //-Vars para Shifting.
     //-Variables for Shifting.
     float3 shiftposp1;
     float shiftdetectp1;
+		float masstot;
     if(shift){
       shiftposp1=make_float3(0,0,0);
-	  shiftdetectp1=(tker==KERNEL_Wendland? massp1*CTE.awen/rhopp1:massp1*CTE.cubic_a2/rhopp1);
+	  shiftdetectp1=(tker==KERNEL_Wendland? massp1*Awen1/rhopp1:massp1*Cubic_a21/rhopp1); //ABVR
     }
 
     //-Obtiene datos de particula p1 en caso de existir floatings.
@@ -1644,8 +1833,26 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
 
     //-Obtiene limites de interaccion
     //-Obtains interaction limits
-    int cxini,cxfin,yini,yfin,zini,zfin;
-    KerGetInteractionCells(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin);
+		int cxini,cxfin,yini,yfin,zini,zfin; //ABVR
+		KerGetInteractionCellsMPVR(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin,H1); //ABVR
+		float newH=0;
+    for(int z=zini;z<zfin;z++){
+      int zmod=(nc.w)*z+cellfluid; //-Le suma donde empiezan las celdas de fluido. //-The sum showing where fluid cells start
+      for(int y=yini;y<yfin;y++){
+        int ymod=zmod+nc.x*y;
+        unsigned pini,pfin=0;
+        for(int x=cxini;x<cxfin;x++){
+          int2 cbeg=begincell[x+ymod];
+          if(cbeg.y){
+            if(!pfin)pini=cbeg.x;
+            pfin=cbeg.y;
+          }
+        }
+        if(pfin) KerCorrectHneighbourlistFluid(pini,pfin,code,phasetype1,accdata,H1,newH);
+      }
+    }
+
+		if(newH) KerGetInteractionCellsMPVR(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin,newH); //ABVR
 
     //-Interaccion con Fluidas.
     //-Interaction with fluids.
@@ -1661,7 +1868,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
             pfin=cbeg.y;
           }
         }
-        if(pfin)KerInteractionForcesFluidBoxMP<psimple,tker,ftmode,lamsps,tdelta,shift> (false,p1,pini,pfin,visco1,ftomassp,tauff,posxy,posz,pospress,velrhop,code,idp,ftmassp1,ftp1,surfc1,posdp1,posp1,velp1,pressp1,rhopp1,taup1_xx_xy,taup1_xz_yy,taup1_yz_zz,grap1_xx_xy,grap1_xz_yy,grap1_yz_zz,acep1,arp1,visc,deltap1,rhop01,phasetype1,accdata,tshifting,shiftposp1,shiftdetectp1);
+        if(pfin)KerInteractionForcesFluidBoxMP<psimple,tker,ftmode,lamsps,tdelta,shift> (false,p1,pini,pfin,visco1,ftomassp,tauff,posxy,posz,pospress,velrhop,code,idp,ftmassp1,ftp1,surfc1,posdp1,posp1,velp1,pressp1,rhopp1,taup1_xx_xy,taup1_xz_yy,taup1_yz_zz,grap1_xx_xy,grap1_xz_yy,grap1_yz_zz,acep1,arp1,visc,deltap1,rhop01,phasetype1,accdata,tshifting,shiftposp1,shiftdetectp1,masstot,Dp1,H1,Awen1,Bwen1,Fourh2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11,Delta2H1);
       }
     }
     //-Interaccion con contorno.
@@ -1678,7 +1885,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
             pfin=cbeg.y;
           }
         }
-        if(pfin)KerInteractionForcesFluidBoxMP<psimple,tker,ftmode,lamsps,tdelta,shift> (true ,p1,pini,pfin,visco1,ftomassp,tauff,posxy,posz,pospress,velrhop,code,idp,ftmassp1,ftp1,surfc1,posdp1,posp1,velp1,pressp1,rhopp1,taup1_xx_xy,taup1_xz_yy,taup1_yz_zz,grap1_xx_xy,grap1_xz_yy,grap1_yz_zz,acep1,arp1,visc,deltap1,rhop01,phasetype1,accdata,tshifting,shiftposp1,shiftdetectp1);
+        if(pfin)KerInteractionForcesFluidBoxMP<psimple,tker,ftmode,lamsps,tdelta,shift> (true ,p1,pini,pfin,visco1,ftomassp,tauff,posxy,posz,pospress,velrhop,code,idp,ftmassp1,ftp1,surfc1,posdp1,posp1,velp1,pressp1,rhopp1,taup1_xx_xy,taup1_xz_yy,taup1_yz_zz,grap1_xx_xy,grap1_xz_yy,grap1_yz_zz,acep1,arp1,visc,deltap1,rhop01,phasetype1,accdata,tshifting,shiftposp1,shiftdetectp1,masstot,Dp1,H1,Awen1,Bwen1,Fourh2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11,Delta2H1);
       }
     }
     //-Almacena resultados.
@@ -1697,7 +1904,7 @@ template<bool psimple,TpKernel tker,TpFtMode ftmode,bool lamsps,TpDeltaSph tdelt
         gradvelff[p1*3+1]=grap1_xz_yy;
         gradvelff[p1*3+2]=grap1_yz_zz;
       }
-	  if(shift)shiftdetect[p1]=shiftdetectp1;
+	  if(shift)shiftdetect[p1]=masstot*shiftdetectp1;
 	  //-For calculating surface tension
 	  if (surfc1){ 
 		tsymatrix3f surf1={0,0,0,0,0,0};
@@ -1732,26 +1939,35 @@ template<bool psimple,TpKernel tker> __device__ void KerRunShiftingBoxMP
   ,double3 posdp1,float3 posp1,float3 velp1,const float rhopp1,const float surfcoef1
   ,const tsymatrix3f surf1,TpShifting tshifting,bool &restrshift,float shiftdetectp1
   ,unsigned phasetype1,volatile StPhaseShiftData *shiftdata
-  ,float3 &acep1,float3 &shiftposp1,float3 &norm1,float &pdiv,float &pdivall)
+  ,float3 &acep1,float3 &shiftposp1,float3 &norm1,float &pdiv,float &pdivall,double Dp1,double H1, float Awen1, float Bwen1, float Fourh2, float Cubic_c11, float Cubic_a21, float Cubic_a241, float Cubic_c21, float Cubic_d11) //ABVR
 {
   for(int p2=pini;p2<pfin;p2++){
     float drx,dry,drz;
     KerGetParticlesDr<psimple> (p2,posxy,posz,pospress,posdp1,posp1,drx,dry,drz);
     float rr2=drx*drx+dry*dry+drz*drz;
-    if(rr2<=CTE.fourh2 && rr2>=ALMOSTZERO){
+    if(rr2<=Fourh2 && rr2>=ALMOSTZERO){
 	 //-Load unique properties for each phase
-	  float massp2; unsigned phasetype2;
+	  float massp2; unsigned phasetype2; double Dp2; double H2; float Awen2; float Bwen2; float Cubic_c12; float Cubic_a22; float Cubic_a242; float Cubic_c22; float Cubic_d12;
 	  for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ //added value selection for the phases
 		  if(CODE_GetTypeAndValue(code[p2])==shiftdata[iphase].MkValue){
 			  massp2=shiftdata[iphase].PhaseMass;
 			  phasetype2=shiftdata[iphase].PhaseType;
+				Dp2=shiftdata[iphase].PhaseDp; //ABVR
+			  H2=shiftdata[iphase].PhaseH; //ABVR
+			  Awen2=shiftdata[iphase].PhaseAwen; //ABVR
+			  Bwen2=shiftdata[iphase].PhaseBwen; //ABVR
+				Cubic_c12=shiftdata[iphase].PhaseCubic_c1; //ABVR
+				Cubic_a22=shiftdata[iphase].PhaseCubic_a2; //ABVR
+				Cubic_a242=shiftdata[iphase].PhaseCubic_a24; //ABVR
+				Cubic_c22=shiftdata[iphase].PhaseCubic_c2; //ABVR
+				Cubic_d12=shiftdata[iphase].PhaseCubic_d1; //ABVR
 			  break;
 		  }
 	  }
       //-Wendland or Cubic Spline kernel.
-      float frx,fry,frz,wab;
-      if(tker==KERNEL_Wendland)KerGetKernelShift(rr2,drx,dry,drz,frx,fry,frz,wab);
-      else if(tker==KERNEL_Cubic)KerGetKernelCubicShift(rr2,drx,dry,drz,frx,fry,frz,wab);
+    float frx,fry,frz,frx1,fry1,frz1,frx2,fry2,frz2,wab; //ABVR
+    if(tker==KERNEL_Wendland)KerGetKernelShift(rr2,drx,dry,drz,frx,fry,frz,frx1,fry1,frz1,frx2,fry2,frz2,wab,Dp1,Dp2,H1,H2,Awen1,Awen2,Bwen1,Bwen2); //ABVR
+    else if(tker==KERNEL_Cubic)KerGetKernelCubicShift(rr2,drx,dry,drz,frx,fry,frz,wab,Dp1,Dp2,H1,H2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11,Cubic_c12,Cubic_a22,Cubic_a242,Cubic_c22,Cubic_d12);
 
 	  //-Obtain particle data
 	  const float4 velrhop2=velrhop[p2];
@@ -1824,6 +2040,16 @@ template<bool psimple,TpKernel tker,bool sim2d> __global__ void KerRunShiftingMP
 		  shiftdata[i].PhaseMass=phasedata[i].PhaseMass;
 		  shiftdata[i].PhaseType=phasedata[i].PhaseType;
 		  shiftdata[i].PhaseSurf=phasedata[i].PhaseSurf;
+			shiftdata[i].PhaseDp=phasedata[i].PhaseDp; //ABVR
+		  shiftdata[i].PhaseH=phasedata[i].PhaseH; //ABVR
+		  shiftdata[i].PhaseAwen=phasedata[i].PhaseAwen; //ABVR
+		  shiftdata[i].PhaseBwen=phasedata[i].PhaseBwen; //ABVR
+			shiftdata[i].PhaseFourh2=phasedata[i].PhaseFourh2; //ABVR
+			shiftdata[i].PhaseCubic_c1=phasedata[i].PhaseCubic_c1; //ABVR
+			shiftdata[i].PhaseCubic_a2=phasedata[i].PhaseCubic_a2; //ABVR
+			shiftdata[i].PhaseCubic_c2=phasedata[i].PhaseCubic_c2; //ABVR
+			shiftdata[i].PhaseCubic_a24=phasedata[i].PhaseCubic_a24; //ABVR
+			shiftdata[i].PhaseCubic_d1=phasedata[i].PhaseCubic_d1; //ABVR
 	  }
   }
   __syncthreads();
@@ -1833,11 +2059,20 @@ template<bool psimple,TpKernel tker,bool sim2d> __global__ void KerRunShiftingMP
     float3 acep1=make_float3(ace[p1].x,ace[p1].y,ace[p1].z);
 
 	//-Load unique properties for each phase
-	unsigned phasetype1; float surfcoef1=0.f;
+	unsigned phasetype1; float surfcoef1=0.f; double Dp1; double H1; float Awen1; float Bwen1; float Fourh2; float Cubic_c11; float Cubic_a21; float Cubic_a241; float Cubic_c21; float Cubic_d11;  //ABVR
 	for(unsigned iphase=0; iphase<CTE.phasecount; iphase++){ 
 		if(CODE_GetTypeAndValue(code[p1])==shiftdata[iphase].MkValue){
 		  phasetype1=shiftdata[iphase].PhaseType;
 		  surfcoef1=shiftdata[iphase].PhaseSurf;
+			Dp1=shiftdata[iphase].PhaseDp; //ABVR
+			H1=shiftdata[iphase].PhaseH; //ABVR
+			Awen1=shiftdata[iphase].PhaseAwen; //ABVR
+			Bwen1=shiftdata[iphase].PhaseBwen; //ABVR
+			Cubic_c11=shiftdata[iphase].PhaseCubic_c1; //ABVR
+			Cubic_a21=shiftdata[iphase].PhaseCubic_a2; //ABVR
+			Cubic_a241=shiftdata[iphase].PhaseCubic_a24; //ABVR
+			Cubic_c21=shiftdata[iphase].PhaseCubic_c2; //ABVR
+			Cubic_d11=shiftdata[iphase].PhaseCubic_d1; //ABVR
 		  break;
 		}
 	}
@@ -1857,7 +2092,7 @@ template<bool psimple,TpKernel tker,bool sim2d> __global__ void KerRunShiftingMP
 
 	//-Obtains interaction limits
     int cxini,cxfin,yini,yfin,zini,zfin;
-    KerGetInteractionCells(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin);
+    KerGetInteractionCellsMPVR(dcell[p1],hdiv,nc,cellzero,cxini,cxfin,yini,yfin,zini,zfin,H1);
 
 	//-Interaction with fluids.
     for(int z=zini;z<zfin;z++){
@@ -1872,7 +2107,7 @@ template<bool psimple,TpKernel tker,bool sim2d> __global__ void KerRunShiftingMP
             pfin=cbeg.y;
           }
         }
-        if(pfin)KerRunShiftingBoxMP<psimple,tker> (p1,pini,pfin,posxy,posz,pospress,velrhop,surf,code,idp,shiftdetect,posdp1,posp1,velp1,rhopp1,surfcoef1,surf1,tshifting,restrshift,shiftdetectp1,phasetype1,shiftdata,acep1,shiftposp1,norm1,pdiv,pdivall);
+        if(pfin)KerRunShiftingBoxMP<psimple,tker> (p1,pini,pfin,posxy,posz,pospress,velrhop,surf,code,idp,shiftdetect,posdp1,posp1,velp1,rhopp1,surfcoef1,surf1,tshifting,restrshift,shiftdetectp1,phasetype1,shiftdata,acep1,shiftposp1,norm1,pdiv,pdivall,Dp1,H1,Awen1,Bwen1,Fourh2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11) ;
       }
     }
 	//-Interaction with boundaries.
@@ -1888,15 +2123,15 @@ template<bool psimple,TpKernel tker,bool sim2d> __global__ void KerRunShiftingMP
             pfin=cbeg.y;
           }
         }
-        if(pfin)KerRunShiftingBoxMP<psimple,tker> (p1,pini,pfin,posxy,posz,pospress,velrhop,surf,code,idp,shiftdetect,posdp1,posp1,velp1,rhopp1,surfcoef1,surf1,tshifting,restrshift,shiftdetectp1,phasetype1,shiftdata,acep1,shiftposp1,norm1,pdiv,pdivall);
+        if(pfin)KerRunShiftingBoxMP<psimple,tker> (p1,pini,pfin,posxy,posz,pospress,velrhop,surf,code,idp,shiftdetect,posdp1,posp1,velp1,rhopp1,surfcoef1,surf1,tshifting,restrshift,shiftdetectp1,phasetype1,shiftdata,acep1,shiftposp1,norm1,pdiv,pdivall,Dp1,H1,Awen1,Bwen1,Fourh2,Cubic_c11,Cubic_a21,Cubic_a241,Cubic_c21,Cubic_d11);
       }
     }
 
 	//-Diffusion coefficient for shifting by Skillen et al.
 	const float velsh=sqrt(velp1.x*velp1.x+velp1.y*velp1.y+velp1.z*velp1.z);
 	const float acemaxl=sqrt(acep1.x*acep1.x+acep1.y*acep1.y+acep1.z*acep1.z);
-	float diffc=0.5f*shiftcoef*velsh*CTE.h*float(dt)/CTE.cfl;
-	float diffc2=-0.5f*sqrt(acemaxl)*float(dt)*(CTE.fourh2/4.f)/sqrt(CTE.h);	
+	float diffc=0.5f*shiftcoef*velsh*H1*float(dt)/CTE.cfl;
+	float diffc2=-0.5f*sqrt(acemaxl)*float(dt)*(Fourh2/4.f)/sqrt(H1);	
 
 	//-Free Surface Term
     float3 congr1=make_float3(0,0,0);

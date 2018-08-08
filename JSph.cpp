@@ -468,6 +468,7 @@ void JSph::LoadCaseConfig(){
     case 2:  TVisco=VISCO_LaminarSPS;  break;
     default: RunException(met,"Viscosity treatment is not valid.");
   }
+  CoefH=eparms.GetValueFloat("coefh",true, 1.0); //ABVR
   Visco=eparms.GetValueFloat("Visco");
   ViscoBoundFactor=eparms.GetValueFloat("ViscoBoundFactor",true,1.f);
   string filevisco=eparms.GetValueStr("ViscoTime",true);
@@ -637,6 +638,24 @@ void JSph::LoadCaseConfig(){
 		if(!block.ExistsSubValue("visco","value"))RunException(met,fun::PrintStr("Object mk=%u - Value of visco is invalid.",block.GetMk()));
 		PhaseData[c].PhaseType=mpblock.GetSubValueInt("phasetype","value",false,0);
 		if(!block.ExistsSubValue("phasetype","value"))RunException(met,fun::PrintStr("Object mk=%u - Phase is invalid.",block.GetMk()));
+		PhaseData[c].PhaseDp=mpblock.GetSubValueDouble("PhaseDp","value",false,Dp); //ABVR
+		if(!block.ExistsSubValue("PhaseDp","value"))RunException(met,fun::PrintStr("Object mk=%u - Dp is invalid.",block.GetMk()));       ////ABVR
+		PhaseData[c].PhaseH=CoefH*PhaseData[c].PhaseDp;
+		/*if(Simulate2D) {
+			PhaseData[c].PhaseH=CoefH*powf(PhaseData[c].PhaseDp*PhaseData[c].PhaseDp,0.5f);
+		}
+		else{
+			PhaseData[c].PhaseH=CoefH*powf(PhaseData[c].PhaseDp*PhaseData[c].PhaseDp*PhaseData[c].PhaseDp,0.5f);
+		}//ABVR*/
+		PhaseData[c].PhaseAwen=0.0f; //ABVR
+		PhaseData[c].PhaseBwen=0.0f; //ABVR
+		PhaseData[c].PhaseH2 =0.0f;
+		PhaseData[c].PhaseDelta2H =0.0f;
+		PhaseData[c].PhaseFourh2 =0.0f;
+		PhaseData[c].PhaseDosh =0.0f;
+		PhaseData[c].PhaseEta2 =0.0f;
+		
+		std::cout<<PhaseData[c].PhaseH<<"\t"<<PhaseData[c].PhaseDp<<"\n";
 		PhaseData[c].PhaseSurf=(float)mpblock.GetSubValueFloat("surfcoef","value",true,0);
 		if(PhaseData[c].PhaseSurf)Surft=true;
 	}
@@ -698,8 +717,9 @@ void JSph::LoadCaseConfig(){
       }
     }
   }
-
+ 
   NpMinimum=CaseNp-unsigned(PartsOutMax*CaseNfluid);
+
   Log->Print("**Basic case configuration is loaded");
 }
 
@@ -852,14 +872,69 @@ void JSph::LoadCodeParticles(unsigned np,const unsigned *idp,word *code)const{
     else{
       cod=CodeSetType(cod,PART_Fluid,cmk-MkListBound);
       if(cmk-MkListBound>=MkListSize)RunException(met,"Fluid code of particles was not found.");
+
     }
     code[p]=cod;
   }
 }
 
+//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//ABVR
+//Update initial particle position for multires flows
+//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//ABVR
+void JSph::UpdatePosVR(unsigned np, const unsigned *idp, unsigned npb,tdouble3* pos, word *code){
+  const char met[]="UpdatePosVR";
+  int i = 1;
+  int j = 1;
+  double posnewz = 0;
+  double DpDiff=0;
+  word cod=0;
+  unsigned p=npb;
+  const unsigned id=idp[p];
+  unsigned int cmk = GetMkBlockById(id);
+  double lowestAirZ=1000;
+  double highestAirZ=0;
+  double minposx = 1000;
+  double maxposx = 0;
+  double relativeX;
+  double relativeZ;
+  bool firstAir=true;
+  for (p;p<np; p++){
+	for (unsigned iphase=0; iphase<MkListSize; iphase++){ 
+	  	if (CODE_GetTypeAndValue(code[p])==PhaseData[iphase].MkValue) {
+			if (PhaseData[iphase].PhaseDp > Dp){
+				DpDiff = PhaseData[iphase].PhaseDp/Dp;
+				if(firstAir){
+					relativeX=pos[p].x-Dp;
+					relativeZ=pos[p].z-Dp;
+					firstAir=false;
+				}
+				double newposx=relativeX+(pos[p].x-relativeX)*DpDiff;
+				if(newposx<(MapRealPosMax.x-Dp)&&newposx>(MapRealPosMin.x+Dp)) pos[p].x=newposx;
+				else{
+					cod=CodeSetType(cod,PART_Fluid,cmk-MkListBound);
+					cod=CODE_SetOutPos(cod);
+					code[p]=cod;
+				}
+				double newposz=relativeZ+(pos[p].z-relativeZ)*DpDiff;
+				if(newposz<(MapRealPosMax.z-Dp)&&newposz>(MapRealPosMin.z+Dp)) pos[p].z=newposz;
+				else{
+					cod=CodeSetType(cod,PART_Fluid,cmk-MkListBound);
+					cod=CODE_SetOutPos(cod);
+					code[p]=cod;
+				}
+				}
+				
+			}
+			
+		}
+			
+	}
+}
+
+//void JSph::CheckPos()
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 //==============================================================================
-/// Updates initial particle density according to case configuration for multiphase flows. -££//MP
+/// Updates initial particle density according to case configuration for multiphase flows. -££//MPABVR
 //==============================================================================
 void JSph::UpdateRhopMP(unsigned np, unsigned npb,tdouble3* pos,tfloat4 *velrhop,word *code){
 	const char met[]="UpdateRhopMP";
@@ -871,7 +946,7 @@ void JSph::UpdateRhopMP(unsigned np, unsigned npb,tdouble3* pos,tfloat4 *velrhop
 				if (CODE_GetTypeAndValue(code[p])==PhaseData[iphase].MkValue) {
 					velrhop[p].w=PhaseData[iphase].PhaseRhop0;
 					break;
-				}
+								}
 			}
 		}					
 	}
@@ -999,7 +1074,7 @@ void JSph::UpdateMassMP(unsigned nphase,bool simulate2d){
 	float vol;
 	if (simulate2d){
 	  	for (unsigned iphase=0; iphase<nphase; iphase++) {
-			vol=float(Dp*Dp);
+			vol=float(PhaseData[iphase].PhaseDp*PhaseData[iphase].PhaseDp);
 			if (CODE_GetType(PhaseData[iphase].MkValue)==CODE_TYPE_FLUID) vol=vol/float(LatticeFluid);
 			else vol=vol/float(LatticeBound);
 			PhaseData[iphase].PhaseMass=PhaseData[iphase].PhaseRhop0*vol;
@@ -1007,7 +1082,7 @@ void JSph::UpdateMassMP(unsigned nphase,bool simulate2d){
 	}
 	else{
 	  	for (unsigned iphase=0; iphase<nphase; iphase++) {
-			vol=float(Dp*Dp*Dp);
+			vol=float(PhaseData[iphase].PhaseDp*PhaseData[iphase].PhaseDp*PhaseData[iphase].PhaseDp);
 			if (CODE_GetType(PhaseData[iphase].MkValue)==CODE_TYPE_FLUID) vol=vol/float(LatticeFluid);
 			else vol=vol/float(LatticeBound);
 			PhaseData[iphase].PhaseMass=PhaseData[iphase].PhaseRhop0*vol;
@@ -1042,74 +1117,142 @@ void JSph::ResizeMapLimits(){
 void JSph::ConfigConstants(bool simulate2d){
   const char* met="ConfigConstants";
   //-Computation of constants.
-  const double h=H;
-  Delta2H=float(h*2*DeltaSph);
-//£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
+  double h=H;
+  float cs0max=0.f;
+  Cs0=sqrt(double(Gamma)*double(CteB)/double(RhopZero));
+	Dosh=float(h*2); 
+	H2=float(h*h);
+	//Fourh2=float(h*h*4); 
+	//Eta2=float((h*0.1)*(h*0.1));
+  //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MPABVR
   if (TPhase==FLOW_Multi){
-	Cs0=sqrt(double(Gamma)*double(CteB)/double(RhopZero));
-	float cs0max=0.f;
-	for(unsigned ipres=0; ipres<MkListSize; ipres++) cs0max=((PhaseData[ipres].PhaseCs0>cs0max)? PhaseData[ipres].PhaseCs0 : cs0max);
-	if(!DtIni)DtIni=h/cs0max;
-	if(!DtMin)DtMin=(h/cs0max)*CoefDtMin;
-  }
+		for (unsigned iphase=0; iphase<MkListSize; iphase++){ 
+			h=PhaseData[iphase].PhaseH;
+			PhaseData[iphase].PhaseDelta2H = float(h*2*DeltaSph);
+  		cs0max=((PhaseData[iphase].PhaseCs0>cs0max)? PhaseData[iphase].PhaseCs0 : cs0max);
+			if(!DtIni)DtIni=PhaseData[iphase].PhaseH/cs0max;
+			if(!DtMin)DtMin=(PhaseData[iphase].PhaseH/cs0max)*CoefDtMin;
+			//PhaseData[iphase].PhaseDosh=float(h*2); 
+			PhaseData[iphase].PhaseH2=float(h*h);
+			PhaseData[iphase].PhaseFourh2=float(h*h*4); 
+			PhaseData[iphase].PhaseEta2=float((h*0.1)*(h*0.1));
+
+			if(simulate2d){
+			
+				if(TKernel==KERNEL_Wendland){
+					PhaseData[iphase].PhaseAwen=float(0.557/(h*h));
+					PhaseData[iphase].PhaseBwen=float(-2.7852/(h*h*h));
+				}
+				else if(TKernel==KERNEL_Cubic){
+					const double a1=10./(PI*7.);
+					const double a2=a1/(h*h);
+					const double aa=a1/(h*h*h);
+					const double deltap=1./1.5;
+					const double wdeltap=a2*(1.-1.5*deltap*deltap+0.75*deltap*deltap*deltap);
+					CubicCte.od_wdeltap=float(1./wdeltap);
+					CubicCte.a1=float(a1);
+					PhaseData[iphase].PhaseCubic_a2=float(a2);
+					CubicCte.aa=float(aa);
+					PhaseData[iphase].PhaseCubic_a24=float(0.25*a2);
+					PhaseData[iphase].PhaseCubic_c1=float(-3.*aa);
+					PhaseData[iphase].PhaseCubic_d1=float(9.*aa/4.);
+					PhaseData[iphase].PhaseCubic_c2=float(-3.*aa/4.);
+				}
+			}
+				else{
+				if(TKernel==KERNEL_Wendland){
+					PhaseData[iphase].PhaseAwen=float(0.41778/(h*h*h));
+					PhaseData[iphase].PhaseBwen=float(-2.08891/(h*h*h*h));
+				}
+				else if(TKernel==KERNEL_Cubic){
+					const double a1=1./PI;
+					const double a2=a1/(h*h*h);
+					const double aa=a1/(h*h*h*h);
+					const double deltap=1./1.5;
+					const double wdeltap=a2*(1.-1.5*deltap*deltap+0.75*deltap*deltap*deltap);
+					CubicCte.od_wdeltap=float(1./wdeltap);
+					CubicCte.a1=float(a1);
+					PhaseData[iphase].PhaseCubic_a2=float(a2);
+					CubicCte.aa=float(aa);
+					PhaseData[iphase].PhaseCubic_a24=float(0.25*a2);
+					PhaseData[iphase].PhaseCubic_c1=float(-3.*aa);
+					PhaseData[iphase].PhaseCubic_d1=float(9.*aa/4.);
+					PhaseData[iphase].PhaseCubic_c2=float(-3.*aa/4.);
+				}
+			}
+		}
+		std::cout <<"\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
+		std::cout << "dogmsepogmrpdhmprpdsohmerposhm" << PhaseData[0].PhaseH <<	"/t"  << PhaseData[1].PhaseH <<	"/n" ;
+	}
   else{
-	Cs0=sqrt(double(Gamma)*double(CteB)/double(RhopZero));
+		
+	Delta2H=float(h*2*DeltaSph);
 	if(!DtIni)DtIni=h/Cs0;
 	if(!DtMin)DtMin=(h/Cs0)*CoefDtMin;
-  }
-//£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
-  Dosh=float(h*2); 
-  H2=float(h*h);
-  Fourh2=float(h*h*4); 
-  Eta2=float((h*0.1)*(h*0.1));
-  if(simulate2d){
-    if(TKernel==KERNEL_Wendland){
-      Awen=float(0.557/(h*h));
-      Bwen=float(-2.7852/(h*h*h));
-    }
-    else if(TKernel==KERNEL_Cubic){
-      const double a1=10./(PI*7.);
-      const double a2=a1/(h*h);
-      const double aa=a1/(h*h*h);
-      const double deltap=1./1.5;
-      const double wdeltap=a2*(1.-1.5*deltap*deltap+0.75*deltap*deltap*deltap);
-      CubicCte.od_wdeltap=float(1./wdeltap);
-      CubicCte.a1=float(a1);
-      CubicCte.a2=float(a2);
-      CubicCte.aa=float(aa);
-      CubicCte.a24=float(0.25*a2);
-      CubicCte.c1=float(-3.*aa);
-      CubicCte.d1=float(9.*aa/4.);
-      CubicCte.c2=float(-3.*aa/4.);
-    }
-  }
-  else{
-    if(TKernel==KERNEL_Wendland){
-      Awen=float(0.41778/(h*h*h));
-      Bwen=float(-2.08891/(h*h*h*h));
-    }
-    else if(TKernel==KERNEL_Cubic){
-      const double a1=1./PI;
-      const double a2=a1/(h*h*h);
-      const double aa=a1/(h*h*h*h);
-      const double deltap=1./1.5;
-      const double wdeltap=a2*(1.-1.5*deltap*deltap+0.75*deltap*deltap*deltap);
-      CubicCte.od_wdeltap=float(1./wdeltap);
-      CubicCte.a1=float(a1);
-      CubicCte.a2=float(a2);
-      CubicCte.aa=float(aa);
-      CubicCte.a24=float(0.25*a2);
-      CubicCte.c1=float(-3.*aa);
-      CubicCte.d1=float(9.*aa/4.);
-      CubicCte.c2=float(-3.*aa/4.);
-    }
-  }
+	Dosh=float(h*2); 
+	H2=float(h*h);
+	Fourh2=float(h*h*4); 
+	Eta2=float((h*0.1)*(h*0.1));
+    
+		if(simulate2d){
+			if(TKernel==KERNEL_Wendland){
+			  Awen=float(0.557/(h*h));
+			  Bwen=float(-2.7852/(h*h*h));
+			}
+			else if(TKernel==KERNEL_Cubic){
+			  const double a1=10./(PI*7.);
+			  const double a2=a1/(h*h);
+			  const double aa=a1/(h*h*h);
+			  const double deltap=1./1.5;
+			  const double wdeltap=a2*(1.-1.5*deltap*deltap+0.75*deltap*deltap*deltap);
+			  CubicCte.od_wdeltap=float(1./wdeltap);
+			  CubicCte.a1=float(a1);
+			  CubicCte.a2=float(a2);
+			  CubicCte.aa=float(aa);
+			  CubicCte.a24=float(0.25*a2);
+			  CubicCte.c1=float(-3.*aa);
+			  CubicCte.d1=float(9.*aa/4.);
+			  CubicCte.c2=float(-3.*aa/4.);
+			}
+		}
+		else{
+			if(TKernel==KERNEL_Wendland){
+			  Awen=float(0.41778/(h*h*h));
+			  Bwen=float(-2.08891/(h*h*h*h));
+			}
+			else if(TKernel==KERNEL_Cubic){
+			  const double a1=1./PI;
+			  const double a2=a1/(h*h*h);
+			  const double aa=a1/(h*h*h*h);
+			  const double deltap=1./1.5;
+			  const double wdeltap=a2*(1.-1.5*deltap*deltap+0.75*deltap*deltap*deltap);
+			  CubicCte.od_wdeltap=float(1./wdeltap);
+			  CubicCte.a1=float(a1);
+			  CubicCte.a2=float(a2);
+			  CubicCte.aa=float(aa);
+			  CubicCte.a24=float(0.25*a2);
+			  CubicCte.c1=float(-3.*aa);
+			  CubicCte.d1=float(9.*aa/4.);
+			  CubicCte.c2=float(-3.*aa/4.);
+			}
+		}
+	}
+
+//£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MPABVR
+
   //-Constants for Laminar viscosity + SPS turbulence model.
   if(TVisco==VISCO_LaminarSPS){  
-    double dp_sps=(Simulate2D? sqrt(Dp*Dp*2.)/2.: sqrt(Dp*Dp*3.)/3.);  
-    SpsSmag=float(pow((0.12*dp_sps),2));
-    SpsBlin=float((2./3.)*0.0066*dp_sps*dp_sps); 
-  }
+	  if (TPhase==FLOW_Multi){
+		for (unsigned iphase=0; iphase<MkListSize; iphase++){
+		double dp_sps=(Simulate2D? sqrt(PhaseData[iphase].PhaseDp*PhaseData[iphase].PhaseDp*2.)/2.: sqrt(PhaseData[iphase].PhaseDp*PhaseData[iphase].PhaseDp*3.)/3.);  
+		SpsSmag=float(pow((0.12*dp_sps),2));
+		SpsBlin=float((2./3.)*0.0066*dp_sps*dp_sps); 
+		}}
+	  else{
+		double dp_sps=(Simulate2D? sqrt(Dp*Dp*2.)/2.: sqrt(Dp*Dp*3.)/3.);  
+		SpsSmag=float(pow((0.12*dp_sps),2));
+		SpsBlin=float((2./3.)*0.0066*dp_sps*dp_sps);
+	}}
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
   //-Update particle mass for multiphase flows
   if(TPhase==FLOW_Multi)UpdateMassMP(MkListSize,simulate2d);

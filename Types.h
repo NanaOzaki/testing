@@ -104,6 +104,20 @@ typedef struct{
 	float PhaseMass;		///< Particle Mass of the material
 	float PhaseVisco;		///< Dynamic Viscosity of the material
 	float PhaseSurf;		///< Surface Tension coefficient (if set to 0 no surface tension forces will be calculated)
+	float PhaseDp;			///Dp for each MK  ABVR
+	float PhaseH;          ///H for each MK   ABVR
+	float PhaseAwen;       ///alpha for W for each MK   ABVR
+	float PhaseBwen;       ///alpha for grad W for each MK   ABVR
+	float PhaseDosh;
+	float PhaseEta2;
+	float PhaseH2;
+	float PhaseFourh2;
+	float PhaseDelta2H;
+	float PhaseCubic_c1;
+	float PhaseCubic_c2;
+	float PhaseCubic_a2;
+	float PhaseCubic_a24;
+	float PhaseCubic_d1;
 }StPhaseData;				
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 
@@ -124,6 +138,20 @@ typedef struct{
 	word MkValue;			///< Save MkValue for each material
 	unsigned PhaseType;		///< Distinguish different phases: (0) for liquids, (1) for gases, (2) for solids
 	float PhaseMass;		///< Particle Mass of the material
+	double PhaseDp;			///Dp for each MK  ABVR
+	double PhaseH;          ///H for each MK   ABVR
+	float PhaseAwen;       ///alpha for W for each MK   ABVR
+	float PhaseBwen;       ///alpha for grad W for each MK   ABVR
+	float PhaseDosh;
+	float PhaseEta2;
+	float PhaseH2;
+	float PhaseFourh2;
+	float PhaseDelta2H;
+	float PhaseCubic_c1;
+	float PhaseCubic_c2;
+	float PhaseCubic_a2;
+	float PhaseCubic_a24;
+	float PhaseCubic_d1;
 }StPhaseBoundData;				
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 
@@ -134,6 +162,20 @@ typedef struct{
 	unsigned PhaseType;		///< Distinguish different phases: (0) for liquids, (1) for gases, (2) for solids
 	float PhaseMass;		///< Particle Mass of the material
 	float PhaseSurf;		///< Surface Tension coefficient (if set to 0 no surface tension forces will be calculated)
+	double PhaseDp;			///Dp for each MK  ABVR
+	double PhaseH;          ///H for each MK   ABVR
+	float PhaseAwen;       ///alpha for W for each MK   ABVR
+	float PhaseBwen;       ///alpha for grad W for each MK   ABVR
+	float PhaseDosh;
+	float PhaseEta2;
+	float PhaseH2;
+	float PhaseFourh2;
+	float PhaseDelta2H;
+	float PhaseCubic_c1;
+	float PhaseCubic_c2;
+	float PhaseCubic_a2;
+	float PhaseCubic_a24;
+	float PhaseCubic_d1;
 }StPhaseShiftData;				
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 

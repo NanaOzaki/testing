@@ -178,6 +178,7 @@ protected:
   float ShiftCoef;      ///<Coefficient for shifting computation.
   float ShiftTFS;       ///<Threshold to detect free surface. Typically 1.5 for 2D and 2.75 for 3D (def=0).
 
+  float CoefH; //ABVR
   float Visco;  
   float ViscoBoundFactor;     //-Para interaccion con contorno usa Visco*ViscoBoundFactor.                      ///<For boundary interaction use Visco*ViscoBoundFactor.
   JSphVisco* ViscoTime;       //-Proporciona un valor de viscosidad en funcion del instante de la simulacion.   ///<Provides a viscosity value as a function of simulation time.
@@ -347,6 +348,7 @@ protected:
   void VisuMP()const;
   void UpdateMassMP(unsigned nphase,bool simulate2d);
   void UpdateRhopMP(unsigned np,unsigned npb,tdouble3* pos,tfloat4 *velrhop,word *code);
+  void UpdatePosVR(unsigned np,const unsigned *idp,unsigned npb,tdouble3* pos,word *code);
   StPhaseData* GetPhaseData(){ return(PhaseData); }			///< Tranfer material constants to the GPU
 //£££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££££//MP
 
